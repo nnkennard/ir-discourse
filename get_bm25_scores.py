@@ -4,6 +4,7 @@ import glob
 import json
 import nltk
 import numpy as np
+import pickle
 import tqdm
 
 from rank_bm25 import BM25Okapi
@@ -13,6 +14,11 @@ parser = argparse.ArgumentParser(description='prepare CSVs for ws training')
 parser.add_argument('-d',
                     '--data_dir',
                     default="../DISAPERE/DISAPERE/final_dataset/",
+                    type=str,
+                    help='path to data file containing score jsons')
+parser.add_argument('-s',
+                    '--score_file',
+                    default="bm25_scores.pkl",
                     type=str,
                     help='path to data file containing score jsons')
 
@@ -29,40 +35,31 @@ class Corpus(object):
   ALL = [REVIEW, FULL]
 
 
-class BERTPreprocessor(object):
+BERT_TOKENIZER = BertTokenizer.from_pretrained('bert-base-uncased')
+def bert_preprocess(sentence):
+  return BERT_TOKENIZER.tokenize(sentence)
 
-  def __init__(self):
-    self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+STEMMER = nltk.stem.porter.PorterStemmer()
+STOPWORDS = nltk.corpus.stopwords.words('english')
 
-  def preprocess(self, sentence):
-    return self.tokenizer.tokenize(sentence) 
-
-
-class NLTKPreprocessor(object):
-
-  def __init__(self):
-    self.stemmer = nltk.stem.porter.PorterStemmer()
-    self.stopwords = nltk.corpus.stopwords.words('english')
-
-  def preprocess(self, sentence):
-    return [
-        self.stemmer.stem(word).lower()
-        for word in nltk.word_tokenize(sentence)
-        if word.lower() not in self.stopwords
-    ]
-
-_NLTK_PREPROCESSOR = NLTKPreprocessor()
-_BERT_PREPROCESSOR = BERTPreprocessor()
+def nltk_preprocess(sentence):
+  return [
+      STEMMER.stem(word).lower()
+      for word in nltk.word_tokenize(sentence)
+      if word.lower() not in STOPWORDS
+  ]
 
 PREP = {
-  Preprocessors.NLTK: lambda x: _NLTK_PREPROCESSOR.preprocess(x),
-  Preprocessors.BERT: lambda x: _BERT_PREPROCESSOR.preprocess(x)
+  Preprocessors.NLTK: nltk_preprocess,
+  Preprocessors.BERT: bert_preprocess
 }
+
+print(PREP)
 
 
 class Data(object):
 
-  def __init__(self, data_dir, preprocessor):
+  def __init__(self, data_dir):
     self.reviews = collections.defaultdict(collections.OrderedDict)
     self.rebuttals = collections.defaultdict(collections.OrderedDict)
     self.labels = collections.defaultdict(collections.OrderedDict)
@@ -98,7 +95,7 @@ def main():
   args = parser.parse_args()
 
   # Get reviews and rebuttals
-  data = Data(args.data_dir, NLTKPreprocessor())
+  data = Data(args.data_dir)
 
   # Get threshold
 
@@ -108,14 +105,13 @@ def main():
   overall_corpora = {
     preprocessor: [PREP[preprocessor](sent) for sent in data.overall_corpus] for preprocessor in Preprocessors.ALL
   }
+
   print("Building overall models")
   overall_models = {
     preprocessor: BM25Okapi(overall_corpora[preprocessor]) for preprocessor in Preprocessors.ALL
   }
 
   scores = {}
-
-  
   for review_id, review_sentences in tqdm.tqdm(data.reviews['test'].items()):
     rebuttal_sentences = data.rebuttals['test'][review_id]
     score_maps = collections.defaultdict(dict)
@@ -131,10 +127,13 @@ def main():
         small_scores.append(mini_model.get_scores(query))
       score_maps[preprocessor][Corpus.REVIEW] = np.array(small_scores)
       score_maps[preprocessor][Corpus.FULL] = np.array(big_scores)
-    scores[review_id] = score_maps
+    scores[review_id] = score_maps, data.labels['test'][review_id]
+    if len(scores) > 10:
+      break
     
-  
 
+  with open(args.score_file, 'wb') as f:
+    pickle.dump(scores, f)
 
 
 if __name__ == "__main__":
