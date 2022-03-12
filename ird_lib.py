@@ -1,37 +1,11 @@
-import argparse
 import collections
 import glob
 import json
-import numpy as np
-import pickle
-import stanza
 import tqdm
+import numpy as np
 
 from rank_bm25 import BM25Okapi
-from transformers import BertTokenizer
-
-parser = argparse.ArgumentParser(description="prepare CSVs for ws training")
-parser.add_argument(
-    "-d",
-    "--data_dir",
-    default="../DISAPERE/DISAPERE/final_dataset/",
-    type=str,
-    help="path to data file containing score jsons",
-)
-parser.add_argument(
-    "-s",
-    "--score_file",
-    default="bm25_scores.pkl",
-    type=str,
-    help="path to data file containing score jsons",
-)
-
-
-class Preprocessors(object):
-  STANZA = "stanza"
-  BERT = "bert"
-  ALL = [STANZA, BERT]
-
+import tokenization_lib as tlib
 
 class Corpus(object):
   REVIEW = "review"
@@ -40,46 +14,6 @@ class Corpus(object):
 
 
 SUBSETS = "train dev test".split()
-
-# ===== Preprocessing =========================================================
-
-with open("nltk_stopwords.json", "r") as f:
-  STOPWORDS = json.load(f)
-
-BERT_TOKENIZER = BertTokenizer.from_pretrained("bert-base-uncased")
-
-
-def bert_preprocess(sentences):
-  return [[
-      tok for tok in BERT_TOKENIZER.tokenize(sentence) if tok not in STOPWORDS
-  ] for sentence in sentences]
-
-
-STANZA_PIPELINE = stanza.Pipeline("en",
-                                  processors="tokenize,lemma",
-                                  tokenize_no_ssplit=True)
-
-
-def stanza_preprocess(sentences):
-  doc = STANZA_PIPELINE("\n\n".join(sentences))
-  lemmatized = []
-  for sentence in doc.sentences:
-    sentence_lemmas = []
-    for token in sentence.tokens:
-      (token_dict,) = token.to_dict()
-      maybe_lemma = token_dict["lemma"].lower()
-      if maybe_lemma not in STOPWORDS:
-        sentence_lemmas.append(maybe_lemma)
-    lemmatized.append(sentence_lemmas)
-  return lemmatized
-
-
-PREP = {
-    Preprocessors.STANZA: stanza_preprocess,
-    Preprocessors.BERT: bert_preprocess
-}
-
-# =============================================================================
 
 TextInfo = collections.namedtuple(
     "TextInfo",
@@ -100,8 +34,8 @@ class Texts(object):
     print("Preprocesing data")
     for subset in SUBSETS:
       print(subset)
-      for filename in tqdm.tqdm(sorted(
-          glob.glob(f"{data_dir}/{subset}/*"))):
+      for filename in tqdm.tqdm(
+          sorted(glob.glob(f"{data_dir}/{subset}/*"))[:10]):
         with open(filename, "r") as f:
           obj = json.load(f)
         review_id = obj["metadata"]["review_id"]
@@ -120,8 +54,8 @@ class Texts(object):
     print("Building overall models")
     self.build_overall_corpus()
     overall_models = {
-      preprocessor: BM25Okapi(sentences)
-      for preprocessor, sentences in self.corpora.items()
+        preprocessor: BM25Okapi(sentences)
+        for preprocessor, sentences in self.corpora.items()
     }
     print("Scoring")
     self.score(overall_models)
@@ -129,8 +63,9 @@ class Texts(object):
   def process_sentences(self, sentences):
     sentence_texts = [x["text"] for x in sentences]
     return {
-        preprocessor: batch_preprocess(sentence_texts, PREP[preprocessor])
-        for preprocessor in Preprocessors.ALL
+        preprocessor: batch_preprocess(sentence_texts, tlib.PREP[preprocessor])
+        for preprocessor in tlib.Preprocessors.ALL
+
     }, len(sentence_texts)
 
   def _get_alignment_map(self, rebuttal_sentences, num_review_sentences):
@@ -141,7 +76,7 @@ class Texts(object):
         continue
       else:
         for rev_i in indices:
-          map_starter[reb_i][rev_i] += 1
+          map_starter[reb_i][rev_i] = 1.0
     return map_starter
 
   def build_overall_corpus(self):
@@ -163,7 +98,7 @@ class Texts(object):
       for review_id, info in tqdm.tqdm(reviews.items()):
         review_sentences, rebuttal_sentences, alignment_map, _ = info
         this_review_scores = {"discrete": alignment_map}
-        for preprocessor in Preprocessors.ALL:
+        for preprocessor in tlib.Preprocessors.ALL:
           mini_model = BM25Okapi(review_sentences[preprocessor])
           big_scores = []
           small_scores = []
@@ -173,19 +108,9 @@ class Texts(object):
                               [offsets[0]:offsets[1]])
             small_scores.append(mini_model.get_scores(query))
           this_review_scores.update({
-            "_".join([preprocessor, Corpus.REVIEW]): np.array(small_scores),
-            "_".join([preprocessor, Corpus.FULL]): np.array(big_scores),
+              "_".join([preprocessor, Corpus.REVIEW]): np.array(small_scores),
+              "_".join([preprocessor, Corpus.FULL]): np.array(big_scores),
           })
         self.scores[subset][review_id] = this_review_scores
 
 
-
-def main():
-  args = parser.parse_args()
-  texts = Texts(args.data_dir)
-  with open(args.score_file, "wb") as f:
-    pickle.dump(texts, f)
-
-
-if __name__ == "__main__":
-  main()
