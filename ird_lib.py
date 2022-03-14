@@ -7,6 +7,7 @@ import numpy as np
 from rank_bm25 import BM25Okapi
 import tokenization_lib as tlib
 
+
 class Corpus(object):
   REVIEW = "review"
   FULL = "full"
@@ -34,8 +35,7 @@ class Texts(object):
     print("Preprocesing data")
     for subset in SUBSETS:
       print(subset)
-      for filename in tqdm.tqdm(
-          sorted(glob.glob(f"{data_dir}/{subset}/*"))[:10]):
+      for filename in tqdm.tqdm(sorted(glob.glob(f"{data_dir}/{subset}/*"))):
         with open(filename, "r") as f:
           obj = json.load(f)
         review_id = obj["metadata"]["review_id"]
@@ -65,7 +65,6 @@ class Texts(object):
     return {
         preprocessor: batch_preprocess(sentence_texts, tlib.PREP[preprocessor])
         for preprocessor in tlib.Preprocessors.ALL
-
     }, len(sentence_texts)
 
   def _get_alignment_map(self, rebuttal_sentences, num_review_sentences):
@@ -88,6 +87,8 @@ class Texts(object):
         review_sentences, _, _, review_len = example_map[review_id]
         self.offset_map[review_id] = (offset, offset + review_len)
         for preprocessor, tokenized in review_sentences.items():
+          if preprocessor == "raw":
+            continue
           self.corpora[preprocessor] += tokenized
         offset += review_len
 
@@ -99,6 +100,8 @@ class Texts(object):
         review_sentences, rebuttal_sentences, alignment_map, _ = info
         this_review_scores = {"discrete": alignment_map}
         for preprocessor in tlib.Preprocessors.ALL:
+          if preprocessor == 'raw':
+            continue
           mini_model = BM25Okapi(review_sentences[preprocessor])
           big_scores = []
           small_scores = []
@@ -108,9 +111,7 @@ class Texts(object):
                               [offsets[0]:offsets[1]])
             small_scores.append(mini_model.get_scores(query))
           this_review_scores.update({
-              "_".join([preprocessor, Corpus.REVIEW]): np.array(small_scores),
-              "_".join([preprocessor, Corpus.FULL]): np.array(big_scores),
+              "|".join([preprocessor, Corpus.REVIEW]): np.array(small_scores),
+              "|".join([preprocessor, Corpus.FULL]): np.array(big_scores),
           })
         self.scores[subset][review_id] = this_review_scores
-
-

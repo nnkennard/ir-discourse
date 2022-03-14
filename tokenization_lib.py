@@ -2,11 +2,19 @@ import json
 import stanza
 from transformers import BertTokenizer
 
+
 class Preprocessors(object):
   STANZA = "stanza"
-  BERT = "bert"
+  #BERT = "bert"
   BERT_STOP = "bert_lemma"
-  ALL = [STANZA, BERT, BERT_STOP]
+  RAW = "raw"
+  ALL = [
+      STANZA,
+      #BERT,
+      BERT_STOP,
+      RAW
+  ]
+
 
 # ===== Preprocessing =========================================================
 
@@ -49,9 +57,11 @@ def stanza_preprocess(sentences):
 
 
 PREP = {
-    Preprocessors.STANZA: stanza_preprocess,
-    Preprocessors.BERT: bert_preprocess,
-    Preprocessors.BERT_STOP: bert_preprocess_stop,
+    Preprocessors.STANZA:
+        stanza_preprocess,
+    #Preprocessors.BERT: bert_preprocess,
+    Preprocessors.BERT_STOP:
+        bert_preprocess_stop,
+    Preprocessors.RAW:
+        lambda x: x,
 }
-
-

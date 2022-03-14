@@ -3,7 +3,6 @@ import pickle
 import ird_lib
 import pickle
 
-
 parser = argparse.ArgumentParser(description="prepare CSVs for ws training")
 parser.add_argument(
     "-d",
