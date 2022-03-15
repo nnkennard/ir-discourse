@@ -8,7 +8,7 @@ Example = collections.namedtuple("Example", "text label".split())
 
 
 def build_text(rebuttal_sentence, review_sentence_1, review_sentence_2):
-  return " [SEP] ".join([rebuttal_sentence, review_sentence_1,
+  return "[CLS] " + " [SEP] ".join([rebuttal_sentence, review_sentence_1,
   review_sentence_2])
 
 
@@ -34,7 +34,6 @@ def sample_indices(num_review_sentences, num_rebuttal_sentences):
         pool.append((i, j, k))
 
   num_samples = num_review_sentences * num_rebuttal_sentences
-  print("Num samples", num_samples)
   return random.sample(pool, num_samples)
 
 
@@ -80,9 +79,9 @@ def main():
         label_map[key] += labels
       example_texts += review_example_texts
     for key, labels in label_map.items():
-      with open(f"weaksup/examples/examples_{subset}_{key}.txt", 'w') as f:
+      with open(f"data/weaksup/examples_{subset}_{key}.txt", 'w') as f:
         f.write("\n".join(str(i) for i in labels))
-    with open(f"weaksup/examples/examples_{subset}_text.txt", 'w') as f:
+    with open(f"data/weaksup/examples_{subset}_text.txt", 'w') as f:
       f.write("\n".join(example_texts))
 
 

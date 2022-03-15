@@ -3,6 +3,7 @@ import collections
 import pickle
 
 no_match_tokens = ["no", "_", "match"]
+NO_MATCH = "NO_MATCH"
 
 Example = collections.namedtuple(
     "Example", "rebuttal_sentence review_sentence label".split())
@@ -16,8 +17,8 @@ def main():
   for subset, subset_texts in texts.texts.items():
     examples = []
     for review_id, info in subset_texts.items():
-      for reb_i, reb_sentence in enumerate(info.rebuttal_sentences["bert"]):
-        for rev_i, rev_sentence in enumerate(info.review_sentences["bert"]):
+      for reb_i, reb_sentence in enumerate(info.rebuttal_sentences["raw"]):
+        for rev_i, rev_sentence in enumerate(info.review_sentences["raw"]):
           examples.append(
               Example(reb_sentence, rev_sentence,
                       info.alignment_map[reb_i][rev_i]))
@@ -25,7 +26,7 @@ def main():
           no_match_score = 1.0
         else:
           no_match_score = 0.0
-        examples.append(Example(reb_sentence, no_match_tokens, no_match_score))
+        examples.append(Example(reb_sentence, NO_MATCH, no_match_score))
     example_map[subset] = [x._asdict() for x in examples]
 
   with open("data/similarity_scores.pkl", "wb") as f:
