@@ -8,18 +8,23 @@ from rank_bm25 import BM25Okapi
 
 class Preprocessors(object):
   STANZA = "stanza"
-  BERT_STOP = "bert_lemma"
-  RAW = "raw"
+  BERT_STOP = "bert_stop"
   ALL = [
       STANZA,
       BERT_STOP,
-      RAW
   ]
+
+RAW = "raw"
+
+SUBSETS = "train dev test".split()
 
 # == Data prep ===============================================
 
 Example = collections.namedtuple(
     "Example", "review_lines rebuttal_lines discrete_mapping identifier".split())
+
+TokenizedExample = collections.namedtuple(
+    "TokenizedExample", "tokenized_review_lines tokenized_rebuttal_lines discrete_mapping identifier".split())
 
 def dump_raw_text_to_file(examples, data_path, dataset, subset):
   with open(f"{data_path}/{dataset}_{subset}.json", 'w') as f:
@@ -32,22 +37,10 @@ class Corpus(object):
   ALL = [REVIEW, FULL]
 
 
-SUBSETS = "train dev test".split()
-
-TextInfo = collections.namedtuple(
-    "TextInfo",
-    "review_sentences rebuttal_sentences alignment_map review_len".split())
-
-
-def batch_preprocess(data, preprocessor):
-  preprocessed = []
-  for i in range(0, len(data), 200):
-    preprocessed += preprocessor(data[i:i + 200])
-  return preprocessed
-
 def load_examples(data_dir, dataset_name, subset):
   with open(f"{data_dir}/{dataset_name}_{subset}.json", 'r') as f:
-    return json.load(f)
+    return { example["identifier"]: example for example in json.load(f)
+    }
 
 class Texts(object):
 
@@ -66,14 +59,6 @@ class Texts(object):
     }
     print("Scoring")
     self.score(overall_models)
-
-  def process_sentences(self, sentences):
-    sentence_texts = [x["text"] for x in sentences]
-    return {
-        preprocessor: batch_preprocess(sentence_texts, tlib.PREP[preprocessor])
-        for preprocessor in tlib.Preprocessors.ALL
-    }, len(sentence_texts)
-
   def build_overall_corpus(self):
     self.corpora = collections.defaultdict(list)
     offset = 0
