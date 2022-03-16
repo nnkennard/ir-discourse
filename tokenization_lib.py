@@ -2,6 +2,7 @@ import json
 import stanza
 from transformers import BertTokenizer
 
+from ird_lib import Preprocessors
 
 class Preprocessors(object):
   STANZA = "stanza"

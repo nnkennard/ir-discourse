@@ -5,7 +5,25 @@ import tqdm
 import numpy as np
 
 from rank_bm25 import BM25Okapi
-import tokenization_lib as tlib
+
+class Preprocessors(object):
+  STANZA = "stanza"
+  BERT_STOP = "bert_lemma"
+  RAW = "raw"
+  ALL = [
+      STANZA,
+      BERT_STOP,
+      RAW
+  ]
+
+# == Data prep ===============================================
+
+Example = collections.namedtuple(
+    "Example", "review_lines rebuttal_lines discrete_mapping identifier".split())
+
+def dump_raw_text_to_file(examples, data_path, dataset, subset):
+  with open(f"{data_path}/{dataset}_{subset}.json", 'w') as f:
+    json.dump([x._asdict() for x in examples], f)
 
 
 class Corpus(object):
@@ -27,30 +45,19 @@ def batch_preprocess(data, preprocessor):
     preprocessed += preprocessor(data[i:i + 200])
   return preprocessed
 
+def load_examples(data_dir, dataset_name, subset):
+  with open(f"{data_dir}/{dataset_name}_{subset}.json", 'r') as f:
+    return json.load(f)
 
 class Texts(object):
 
-  def __init__(self, data_dir):
-    self.texts = collections.defaultdict(dict)
-    print("Preprocesing data")
-    for subset in SUBSETS:
-      print(subset)
-      for filename in tqdm.tqdm(sorted(glob.glob(f"{data_dir}/{subset}/*"))):
-        with open(filename, "r") as f:
-          obj = json.load(f)
-        review_id = obj["metadata"]["review_id"]
-        review_sentences, review_len = self.process_sentences(
-            obj["review_sentences"])
-        rebuttal_sentences, _ = self.process_sentences(
-            obj["rebuttal_sentences"])
-        alignment_map = self._get_alignment_map(obj["rebuttal_sentences"],
-                                                review_len)
-        self.texts[subset][review_id] = TextInfo(
-            review_sentences,
-            rebuttal_sentences,
-            alignment_map,
-            review_len,
-        )
+  def __init__(self, data_dir, dataset_name):
+
+    for subset in ird_lib.SUBSETS:
+      examples = load_examples(data_dir, dataset_name, subset)
+
+    # Preprocess examples
+
     print("Building overall models")
     self.build_overall_corpus()
     overall_models = {
@@ -66,17 +73,6 @@ class Texts(object):
         preprocessor: batch_preprocess(sentence_texts, tlib.PREP[preprocessor])
         for preprocessor in tlib.Preprocessors.ALL
     }, len(sentence_texts)
-
-  def _get_alignment_map(self, rebuttal_sentences, num_review_sentences):
-    map_starter = np.zeros([len(rebuttal_sentences), num_review_sentences])
-    for reb_i, rebuttal_sentence in enumerate(rebuttal_sentences):
-      align_type, indices = rebuttal_sentence["alignment"]
-      if indices is None:
-        continue
-      else:
-        for rev_i in indices:
-          map_starter[reb_i][rev_i] = 1.0
-    return map_starter
 
   def build_overall_corpus(self):
     self.corpora = collections.defaultdict(list)

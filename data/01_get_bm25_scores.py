@@ -23,7 +23,7 @@ parser.add_argument(
 
 def main():
   args = parser.parse_args()
-  texts = ird_lib.Texts(args.data_dir)
+  texts = ird_lib.Texts(args.data_dir, dataset)
   with open(args.score_file, "wb") as f:
     pickle.dump(texts, f)
 
