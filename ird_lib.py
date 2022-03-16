@@ -4,7 +4,6 @@ import json
 import tqdm
 import numpy as np
 
-from rank_bm25 import BM25Okapi
 
 
 class Preprocessors(object):
@@ -79,26 +78,4 @@ class Texts(object):
           self.corpora[preprocessor] += tokenized
         offset += review_len
 
-  def score(self, overall_models):
-    self.scores = collections.defaultdict(dict)
-    for subset, reviews in self.texts.items():
-      print(subset)
-      for review_id, info in tqdm.tqdm(reviews.items()):
-        review_sentences, rebuttal_sentences, alignment_map, _ = info
-        this_review_scores = {"discrete": alignment_map}
-        for preprocessor in tlib.Preprocessors.ALL:
-          if preprocessor == "raw":
-            continue
-          mini_model = BM25Okapi(review_sentences[preprocessor])
-          big_scores = []
-          small_scores = []
-          for i, query in enumerate(rebuttal_sentences[preprocessor]):
-            offsets = self.offset_map[review_id]
-            big_scores.append(overall_models[preprocessor].get_scores(query)
-                              [offsets[0]:offsets[1]])
-            small_scores.append(mini_model.get_scores(query))
-          this_review_scores.update({
-              "|".join([preprocessor, Corpus.REVIEW]): np.array(small_scores),
-              "|".join([preprocessor, Corpus.FULL]): np.array(big_scores),
-          })
-        self.scores[subset][review_id] = this_review_scores
+
