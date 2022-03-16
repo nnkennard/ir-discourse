@@ -22,6 +22,7 @@ parser.add_argument(
 )
 # =============================================================================
 
+
 def build_overall_corpus(tokenzied_examples):
   corpora = collections.defaultdict(list)
   offset = 0
@@ -34,6 +35,7 @@ def build_overall_corpus(tokenzied_examples):
         corpora[preprocessor] += tokenized
       offset += review_len
   return corpora, offset_map
+
 
 def batch_preprocess(data, preprocessor):
   preprocessed = []
@@ -50,6 +52,7 @@ def tokenize_sentences(sentences):
   output[ird_lib.RAW] = sentence_texts
   return output
 
+
 def tokenize_example(examples):
   tokenized_examples = {}
   for subset, subset_examples in examples.items():
@@ -57,18 +60,22 @@ def tokenize_example(examples):
     print(f"Tokenizing examples in {subset}")
     for review_id, example in tqdm.tqdm(subset_examples.items()):
       tokenized_subset_examples[review_id] = TokenizedExample(
-        tokenize_sentences(example['review_lines']),
-        tokenize_sentences(example['rebuttal_lines']),
-        example['discrete_mapping'],
-        review_id)
+          tokenize_sentences(example["review_lines"]),
+          tokenize_sentences(example["rebuttal_lines"]),
+          example["discrete_mapping"],
+          review_id,
+      )
     tokenized_examples[subset] = tokenized_subset_examples
   return tokenized_examples
+
 
 def main():
   args = parser.parse_args()
 
-  examples = {subset: load_examples(data_dir, dataset_name, subset)
-                        for subset in ird_lib.SUBSETS}
+  examples = {
+      subset: load_examples(data_dir, dataset_name, subset)
+      for subset in ird_lib.SUBSETS
+  }
   tokenized_examples = tokenize(examples)
 
   overall_corpus, offset_map = build_overall_corpus(examples)

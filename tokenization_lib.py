@@ -4,16 +4,17 @@ from transformers import BertTokenizer
 
 from ird_lib import Preprocessors
 
+
 class Preprocessors(object):
   STANZA = "stanza"
-  #BERT = "bert"
+  # BERT = "bert"
   BERT_STOP = "bert_lemma"
   RAW = "raw"
   ALL = [
       STANZA,
-      #BERT,
+      # BERT,
       BERT_STOP,
-      RAW
+      RAW,
   ]
 
 
@@ -60,7 +61,7 @@ def stanza_preprocess(sentences):
 PREP = {
     Preprocessors.STANZA:
         stanza_preprocess,
-    #Preprocessors.BERT: bert_preprocess,
+    # Preprocessors.BERT: bert_preprocess,
     Preprocessors.BERT_STOP:
         bert_preprocess_stop,
     Preprocessors.RAW:

@@ -6,6 +6,7 @@ import numpy as np
 
 from rank_bm25 import BM25Okapi
 
+
 class Preprocessors(object):
   STANZA = "stanza"
   BERT_STOP = "bert_stop"
@@ -14,6 +15,7 @@ class Preprocessors(object):
       BERT_STOP,
   ]
 
+
 RAW = "raw"
 
 SUBSETS = "train dev test".split()
@@ -21,26 +23,29 @@ SUBSETS = "train dev test".split()
 # == Data prep ===============================================
 
 Example = collections.namedtuple(
-    "Example", "review_lines rebuttal_lines discrete_mapping identifier".split())
+    "Example",
+    "review_lines rebuttal_lines discrete_mapping identifier".split())
 
 TokenizedExample = collections.namedtuple(
-    "TokenizedExample", "tokenized_review_lines tokenized_rebuttal_lines discrete_mapping identifier".split())
+    "TokenizedExample",
+    "tokenized_review_lines tokenized_rebuttal_lines discrete_mapping identifier"
+    .split(),
+)
 
-def dump_raw_text_to_file(examples, data_path, dataset, subset):
-  with open(f"{data_path}/{dataset}_{subset}.json", 'w') as f:
+
+def dump_raw_text_to_file(examples, data_dir, subset):
+  with open(f"{data_dir}/{subset}_raw.json", "w") as f:
     json.dump([x._asdict() for x in examples], f)
+
+def load_examples(data_dir, dataset_name, subset):
+  with open(f"{data_dir}/{subset}_raw.json", "r") as f:
+    return {example["identifier"]: example for example in json.load(f)}
 
 
 class Corpus(object):
   REVIEW = "review"
   FULL = "full"
   ALL = [REVIEW, FULL]
-
-
-def load_examples(data_dir, dataset_name, subset):
-  with open(f"{data_dir}/{dataset_name}_{subset}.json", 'r') as f:
-    return { example["identifier"]: example for example in json.load(f)
-    }
 
 class Texts(object):
 
@@ -59,6 +64,7 @@ class Texts(object):
     }
     print("Scoring")
     self.score(overall_models)
+
   def build_overall_corpus(self):
     self.corpora = collections.defaultdict(list)
     offset = 0
@@ -81,7 +87,7 @@ class Texts(object):
         review_sentences, rebuttal_sentences, alignment_map, _ = info
         this_review_scores = {"discrete": alignment_map}
         for preprocessor in tlib.Preprocessors.ALL:
-          if preprocessor == 'raw':
+          if preprocessor == "raw":
             continue
           mini_model = BM25Okapi(review_sentences[preprocessor])
           big_scores = []

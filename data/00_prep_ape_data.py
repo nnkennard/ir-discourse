@@ -1,15 +1,32 @@
+import argparse
 import collections
 import json
 import numpy as np
 
 import ird_lib
 
+parser = argparse.ArgumentParser(
+    description="Convert APE data into shared format")
+parser.add_argument(
+    "-d",
+    "--data_dir",
+    type=str,
+    help="path to directory containing original APE data files",
+)
+parser.add_argument(
+    "-o",
+    "--output_dir",
+    type=str,
+    help="output directory for APE",
+)
+
+
 REVIEW, REPLY = "Review", "Reply"
 
 
-def get_subset_lines(subset):
+def get_subset_lines(subset, data_dir):
   split_by_paper = collections.defaultdict(list)
-  with open(f"original_data/ape/{subset}.txt", "r") as f:
+  with open(f"{data_dir}/{subset}.txt", "r") as f:
     for line in f:
       if not line.strip():
         continue
@@ -38,8 +55,8 @@ def build_example(review_lines, reply_lines, identifier):
     else:
       review_index_map[maybe_mapping_index].append(i)
 
-  reply_to_review_map = np.zeros([len(reply_lines), len(review_lines)],
-  dtype=np.int64)
+  reply_to_review_map = np.zeros(
+      [len(reply_lines), len(review_lines)], dtype=np.int64)
   reply_text_lines = []
   for rep_i, line in enumerate(reply_lines):
     text, _, bio, _, _ = line.strip().split("\t")
@@ -52,7 +69,7 @@ def build_example(review_lines, reply_lines, identifier):
         reply_to_review_map[rep_i][rev_i] = 1
 
   return ird_lib.Example(review_text_lines, reply_text_lines,
-            reply_to_review_map.tolist(), identifier)
+                         reply_to_review_map.tolist(), identifier)
 
 
 def build_examples(lines, paper_number):
@@ -83,12 +100,14 @@ def process_papers(split_by_paper):
   for paper_number, lines in split_by_paper.items():
     examples += build_examples(lines, paper_number)
   return examples
+
+
 def main():
-  data_path = "original_data/ape/"
-  for subset in "train dev test".split():
-    split_by_paper = get_subset_lines(subset)
+  args = parser.parse_args()
+  for subset in ird_lib.SUBSETS:
+    split_by_paper = get_subset_lines(subset, args.data_dir)
     examples = process_papers(split_by_paper)
-    ird_lib.dump_raw_text_to_file(examples, data_path, "ape", subset)
+    ird_lib.dump_raw_text_to_file(examples, args.output_dir, subset)
 
 
 if __name__ == "__main__":
