@@ -22,13 +22,13 @@ python 00_prep_ape_data.py -d original_data/ape -o processed_data/ape
 
 # Calculate weak supervision scores
 python 01_get_bm25_scores.py -d processed_data/disapere -n disapere
-python 01_get_bm25_scores.py -d processed_data/ape -n ape
+#python 01_get_bm25_scores.py -d processed_data/ape -n ape
 
 # Prepare weak supervision data
 mkdir processed_data/disapere/weaksup
 mkdir processed_data/ape/weaksup
 python 03_prep_weaksup_data.py -d processed_data/disapere
-python 03_prep_weaksup_data.py -d processed_data/ape
+#python 03_prep_weaksup_data.py -d processed_data/ape
 
 
 # Prepare similarity data

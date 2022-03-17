@@ -23,7 +23,7 @@ def build_text(rebuttal_sentence, review_sentence_1, review_sentence_2):
       [rebuttal_sentence, review_sentence_1, review_sentence_2])
 
 
-def sample_indices(num_review_sentences, num_rebuttal_sentences):
+def sample_indices(num_review_sentences, num_rebuttal_sentences, dont_sample):
   pool = []
   for i in range(num_rebuttal_sentences):
     for j in range(num_review_sentences):
@@ -32,8 +32,11 @@ def sample_indices(num_review_sentences, num_rebuttal_sentences):
           continue
         pool.append((i, j, k))
 
-  num_samples = num_review_sentences * num_rebuttal_sentences
-  return random.sample(pool, num_samples)
+  if dont_sample:
+    return pool
+  else:
+    num_samples = num_review_sentences * num_rebuttal_sentences
+    return random.sample(pool, num_samples)
 
 
 def get_example_texts(review_sentences, rebuttal_sentences, sampled_indices):
@@ -43,14 +46,15 @@ def get_example_texts(review_sentences, rebuttal_sentences, sampled_indices):
       for reb_i, rev_j, rev_k in sampled_indices
   ]
 
-def sample_and_label(subset_scores, raw_text_map):
+def sample_and_label(subset_scores, raw_text_map, dont_sample=False):
   example_texts = []
   label_map = collections.defaultdict(list)
   for review_id, scores in tqdm.tqdm(subset_scores.items()):
     review_sentences = raw_text_map[review_id]["review_lines"]
     rebuttal_sentences = raw_text_map[review_id]["rebuttal_lines"]
     sampled_indices = sample_indices(len(review_sentences),
-                                     len(rebuttal_sentences))
+                                     len(rebuttal_sentences),
+                                     dont_sample=dont_sample)
 
     review_example_texts = get_example_texts(review_sentences,
                                              rebuttal_sentences,
@@ -75,7 +79,8 @@ def main():
   with open(f"{args.data_dir}/scores.pkl", "rb") as f:
     scores = pickle.load(f)
   example_map = collections.defaultdict(lambda: collections.defaultdict(list))
-  for subset, subset_scores in scores.items():
+  for subset in "train dev".split():
+    subset_scores = scores[subset]
     print(f"Sampling examples from {subset}")
     raw_text_map = ird_lib.load_examples(args.data_dir, None, subset)
     example_texts, label_map = sample_and_label(subset_scores, raw_text_map)
@@ -84,6 +89,19 @@ def main():
         f.write("\n".join(str(i) for i in labels))
     with open(f"{args.data_dir}/weaksup/examples_{subset}_text.txt", "w") as f:
       f.write("\n".join(example_texts))
+
+  for subset in "dev test".split():
+    subset_scores = scores[subset]
+    print(f"Not-sampling examples from {subset}")
+    raw_text_map = ird_lib.load_examples(args.data_dir, None, subset)
+    example_texts, label_map = sample_and_label(subset_scores, raw_text_map,
+    dont_sample=True)
+    for key, labels in label_map.items():
+      with open(f"{args.data_dir}/weaksup/examples_{subset}_all_{key}.txt", "w") as f:
+        f.write("\n".join(str(i) for i in labels))
+    with open(f"{args.data_dir}/weaksup/examples_{subset}_all_text.txt", "w") as f:
+      f.write("\n".join(example_texts))
+
 
 
 if __name__ == "__main__":

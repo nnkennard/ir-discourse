@@ -98,6 +98,25 @@ def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler):
   return correct_predictions.double() / n_examples, np.mean(losses)
 
 
+def calculate_mrr(model, data_loader, loss_fn, device):
+  model = model.eval()
+
+  print("Calculating dev MRR")
+  with torch.no_grad():
+    for d in tqdm.tqdm(data_loader):
+      input_ids = d["input_ids"].to(device)
+      attention_mask = d["attention_mask"].to(device)
+      targets = d["targets"].to(device)
+
+      outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+      _, preds = torch.max(outputs, dim=1)
+
+      loss = loss_fn(outputs, targets)
+
+  return None
+
+
+
 def eval_model(model, data_loader, loss_fn, device):
   model = model.eval()
 
@@ -123,13 +142,13 @@ def eval_model(model, data_loader, loss_fn, device):
   return correct_predictions.double() / n_examples, np.mean(losses)
 
 
-def create_data_loader(subset, key, tokenizer, batch_size):
+def create_data_loader(data_dir, subset, key, tokenizer, batch_size):
 
-  with open(f"../data/weaksup/examples_{subset}_text.txt", "r") as f:
+  with open(f"{data_dir}/examples_{subset}_text.txt", "r") as f:
     texts = [l.strip() for l in f.readlines()]
 
-  with open(f"../data/weaksup/examples_{subset}_{key}.txt", "r") as f:
-    labels = [int(l.strip()) for l in f.readlines()]
+  with open(f"{data_dir}/examples_{subset}_{key}.txt", "r") as f:
+    labels = [int(l.strip()) for l in f.readlines()][:100]
 
   ds = WeakSupervisionDataset(
       texts,
@@ -140,22 +159,29 @@ def create_data_loader(subset, key, tokenizer, batch_size):
   return DataLoader(ds, batch_size=batch_size, num_workers=4)
 
 
-BATCH_SIZE = 64
+BATCH_SIZE = 16
 
 
 def build_data_loaders(key, tokenizer):
   return (
-      create_data_loader("train", key, tokenizer, BATCH_SIZE),
-      create_data_loader("dev", key, tokenizer, BATCH_SIZE),
+      create_data_loader(
+      "../data/processed_data/disapere/weaksup/",
+      "train", key, tokenizer, BATCH_SIZE),
+      create_data_loader(
+      "../data/processed_data/disapere/weaksup/",
+      "dev", key, tokenizer, BATCH_SIZE),
   )
 
 
 def main():
 
-  key = "bert_lemma|full"
+  key = "bert_stop|full"
 
   tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
   train_data_loader, val_data_loader = build_data_loaders(key, tokenizer)
+  full_val_data_loader = create_data_loader(
+      "../data/processed_data/disapere/weaksup/",
+      "dev_all", key, tokenizer, BATCH_SIZE)
 
   model = SentimentClassifier(2)
   model = model.to("cuda")
@@ -186,6 +212,8 @@ def main():
     print(f"Train loss {train_loss} accuracy {train_acc}")
 
     val_acc, val_loss = eval_model(model, val_data_loader, loss_fn, device)
+
+    val_mrr = calculate_mrr(model, full_val_data_loader, loss_fn, device)
 
     print(f"Val   loss {val_loss} accuracy {val_acc}")
     print()
