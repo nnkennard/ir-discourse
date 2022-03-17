@@ -46,19 +46,27 @@ def get_example_texts(review_sentences, rebuttal_sentences, sampled_indices):
       for reb_i, rev_j, rev_k in sampled_indices
   ]
 
-def sample_and_label(subset_scores, raw_text_map, dont_sample=False):
+def sample_and_label(subset_scores, raw_text_map, dont_sample=False,
+    mini_sample=False):
   example_texts = []
+  sources = []
   label_map = collections.defaultdict(list)
-  for review_id, scores in tqdm.tqdm(subset_scores.items()):
+  review_ids = subset_scores.keys()
+  if mini_sample:
+    review_ids = list(review_ids)[:20]
+  for review_id in tqdm.tqdm(review_ids):
+    scores = subset_scores[review_id]
     review_sentences = raw_text_map[review_id]["review_lines"]
     rebuttal_sentences = raw_text_map[review_id]["rebuttal_lines"]
     sampled_indices = sample_indices(len(review_sentences),
                                      len(rebuttal_sentences),
-                                     dont_sample=dont_sample)
+                                     dont_sample=dont_sample or mini_sample)
 
     review_example_texts = get_example_texts(review_sentences,
                                              rebuttal_sentences,
                                              sampled_indices)
+    example_texts += review_example_texts
+    sources += [(review_id, i, j, k) for i, j, k in sampled_indices]
 
     review_label_map = collections.defaultdict(list)
     for key, score_matrix in scores.items():
@@ -71,8 +79,7 @@ def sample_and_label(subset_scores, raw_text_map, dont_sample=False):
         review_label_map[key].append(label)
     for key, labels in review_label_map.items():
       label_map[key] += labels
-    example_texts += review_example_texts
-  return example_texts, label_map
+  return example_texts, label_map, sources
 
 def main():
   args = parser.parse_args()
@@ -83,24 +90,42 @@ def main():
     subset_scores = scores[subset]
     print(f"Sampling examples from {subset}")
     raw_text_map = ird_lib.load_examples(args.data_dir, None, subset)
-    example_texts, label_map = sample_and_label(subset_scores, raw_text_map)
+    example_texts, label_map, _ = sample_and_label(subset_scores, raw_text_map)
     for key, labels in label_map.items():
       with open(f"{args.data_dir}/weaksup/examples_{subset}_{key}.txt", "w") as f:
         f.write("\n".join(str(i) for i in labels))
     with open(f"{args.data_dir}/weaksup/examples_{subset}_text.txt", "w") as f:
       f.write("\n".join(example_texts))
 
-  for subset in "dev test".split():
-    subset_scores = scores[subset]
-    print(f"Not-sampling examples from {subset}")
-    raw_text_map = ird_lib.load_examples(args.data_dir, None, subset)
-    example_texts, label_map = sample_and_label(subset_scores, raw_text_map,
-    dont_sample=True)
-    for key, labels in label_map.items():
-      with open(f"{args.data_dir}/weaksup/examples_{subset}_all_{key}.txt", "w") as f:
-        f.write("\n".join(str(i) for i in labels))
-    with open(f"{args.data_dir}/weaksup/examples_{subset}_all_text.txt", "w") as f:
-      f.write("\n".join(example_texts))
+  # Prep full test
+  subset = "test"
+  subset_scores = scores[subset]
+  print(f"Not-sampling examples from {subset}")
+  raw_text_map = ird_lib.load_examples(args.data_dir, None, subset)
+  example_texts, label_map, sources = sample_and_label(subset_scores, raw_text_map,
+  dont_sample=True)
+  for key, labels in label_map.items():
+    with open(f"{args.data_dir}/weaksup/examples_{subset}_all_{key}.txt", "w") as f:
+      f.write("\n".join(str(i) for i in labels))
+  with open(f"{args.data_dir}/weaksup/examples_{subset}_all_text.txt", "w") as f:
+    f.write("\n".join(example_texts))
+  with open(f"{args.data_dir}/weaksup/examples_{subset}_all_sources.txt", "w") as f:
+    f.write("\n".join("\t".join(str(i) for i in source) for source in sources))
+
+  # Prep mini dev 
+  subset = "dev"
+  subset_scores = scores[subset]
+  print(f"Mini-sampling examples from {subset}")
+  raw_text_map = ird_lib.load_examples(args.data_dir, None, subset)
+  example_texts, label_map, sources = sample_and_label(subset_scores, raw_text_map,
+  mini_sample=True)
+  for key, labels in label_map.items():
+    with open(f"{args.data_dir}/weaksup/examples_{subset}_mini_{key}.txt", "w") as f:
+      f.write("\n".join(str(i) for i in labels))
+  with open(f"{args.data_dir}/weaksup/examples_{subset}_mini_text.txt", "w") as f:
+    f.write("\n".join(example_texts))
+  with open(f"{args.data_dir}/weaksup/examples_{subset}_mini_sources.txt", "w") as f:
+    f.write("\n".join("\t".join(str(i) for i in source) for source in sources))
 
 
 
