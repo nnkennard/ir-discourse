@@ -11,7 +11,7 @@ PRE_TRAINED_MODEL_NAME = "bert-base-uncased"
 class WeakSupervisionDataset(Dataset):
 
   def __init__(self, texts, targets, tokenizer, max_len=512):
-    self.texts = texts
+    self.identifiers, self.texts = zip(*[x.split("\t") for x in texts])
     self.target_indices = targets
     self.targets = [np.eye(2, dtype=np.float64)[int(i)] for i in targets]
     self.tokenizer = tokenizer
@@ -41,6 +41,7 @@ class WeakSupervisionDataset(Dataset):
         "attention_mask": encoding["attention_mask"].flatten(),
         "targets": torch.tensor(target, dtype=torch.float64),
         "target_indices": self.target_indices[item],
+        "identifier": self.identifiers[item],
     }
 
 

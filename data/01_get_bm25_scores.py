@@ -31,7 +31,7 @@ def build_overall_corpus(tokenized_examples):
   for subset, subset_examples in tokenized_examples.items():
     for review_id, example in subset_examples.items():
       review_sentences = example.tokenized_review_lines
-      offset_map[review_id] = (offset, offset + len(review_sentences['raw']))
+      offset_map[review_id] = (offset, offset + len(review_sentences["raw"]))
       for preprocessor, tokenized in review_sentences.items():
         corpora[preprocessor] += tokenized
       offset += len(review_sentences)
@@ -69,6 +69,7 @@ def tokenize(examples):
     tokenized_examples[subset] = tokenized_subset_examples
   return tokenized_examples
 
+
 def score_examples(tokenized_examples, overall_models, offset_map):
   scores = collections.defaultdict(dict)
   for subset, subset_examples in tokenized_examples.items():
@@ -76,9 +77,9 @@ def score_examples(tokenized_examples, overall_models, offset_map):
     for review_id, info in tqdm.tqdm(subset_examples.items()):
       review_sentences, rebuttal_sentences, alignment_map, _ = info
       offsets = offset_map[review_id]
-      #print(review_sentences)
-      #print("====")
-      #print(len(review_sentences["raw"]), offsets[1] - offsets[0])
+      # print(review_sentences)
+      # print("====")
+      # print(len(review_sentences["raw"]), offsets[1] - offsets[0])
       this_review_scores = {"discrete": alignment_map}
       for preprocessor in tlib.Preprocessors.ALL:
         mini_model = BM25Okapi(review_sentences[preprocessor])
@@ -89,11 +90,14 @@ def score_examples(tokenized_examples, overall_models, offset_map):
                             [offsets[0]:offsets[1]])
           small_scores.append(mini_model.get_scores(query))
         this_review_scores.update({
-            "|".join([preprocessor, ird_lib.Corpus.REVIEW]): np.array(small_scores),
-            "|".join([preprocessor, ird_lib.Corpus.FULL]): np.array(big_scores),
+            "|".join([preprocessor, ird_lib.Corpus.REVIEW]):
+                np.array(small_scores),
+            "|".join([preprocessor, ird_lib.Corpus.FULL]):
+                np.array(big_scores),
         })
       scores[subset][review_id] = this_review_scores
   return scores
+
 
 def main():
   args = parser.parse_args()
@@ -106,13 +110,12 @@ def main():
 
   overall_corpus, offset_map = build_overall_corpus(tokenized_examples)
   overall_models = {
-        preprocessor: BM25Okapi(sentences)
-        for preprocessor, sentences in overall_corpus.items()
+      preprocessor: BM25Okapi(sentences)
+      for preprocessor, sentences in overall_corpus.items()
   }
-  with open(f"{args.data_dir}/scores.pkl", 'wb') as f:
-    pickle.dump(score_examples(
-    tokenized_examples, overall_models, offset_map), f)
-
+  with open(f"{args.data_dir}/scores.pkl", "wb") as f:
+    pickle.dump(score_examples(tokenized_examples, overall_models, offset_map),
+                f)
 
 
 if __name__ == "__main__":

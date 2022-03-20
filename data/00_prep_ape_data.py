@@ -20,7 +20,6 @@ parser.add_argument(
     help="output directory for APE",
 )
 
-
 REVIEW, REPLY = "Review", "Reply"
 
 

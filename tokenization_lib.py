@@ -4,7 +4,6 @@ from transformers import BertTokenizer
 
 from ird_lib import Preprocessors
 
-
 # ===== Preprocessing =========================================================
 
 with open("nltk_stopwords.json", "r") as f:
@@ -14,11 +13,9 @@ BERT_TOKENIZER = BertTokenizer.from_pretrained("bert-base-uncased")
 
 
 def bert_preprocess_stop(sentences):
-  return [[tok
-           for tok in BERT_TOKENIZER.tokenize(sentence)
-           if tok not in STOPWORDS]
-          for sentence in sentences]
-
+  return [[
+      tok for tok in BERT_TOKENIZER.tokenize(sentence) if tok not in STOPWORDS
+  ] for sentence in sentences]
 
 
 STANZA_PIPELINE = stanza.Pipeline("en",
@@ -41,8 +38,6 @@ def stanza_preprocess(sentences):
 
 
 PREP = {
-    Preprocessors.STANZA:
-        stanza_preprocess,
-    Preprocessors.BERT_STOP:
-        bert_preprocess_stop,
+    Preprocessors.STANZA: stanza_preprocess,
+    Preprocessors.BERT_STOP: bert_preprocess_stop,
 }

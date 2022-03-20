@@ -1,5 +1,6 @@
 import argparse
 import collections
+import json
 import numpy as np
 import pandas as pd
 import pickle
@@ -49,8 +50,56 @@ TRAIN, EVAL = "train eval".split()
 HistoryItem = collections.namedtuple("HistoryItem",
   "epoch train_acc train_loss val_acc val_loss val_mrr".split())
 
-def calculate_mrr(results):
-  print(results)
+def convert_wins_to_map(wins, scores, num_review_sentences, relevant_sentences):
+  win_count_to_indices = collections.OrderedDict()
+  missing_indices = set(range(num_review_sentences))
+  for review_index, num_wins in wins.most_common():
+    missing_indices.remove(int(review_index))
+    if num_wins in win_count_to_indices:
+      win_count_to_indices[num_wins].append(int(review_index))
+    else:
+      win_count_to_indices[num_wins] = [int(review_index)]
+  win_count_to_indices[0] = list(sorted(missing_indices))
+
+  is_ranked_sentence_relevant = [None] * num_review_sentences
+  for win_count, indices in win_count_to_indices.items():
+    ordered_indices = list(reversed(sorted([x, scores[x]] for x in indices)))
+    for _, index in ordered_indices:
+      is_ranked_sentence_relevant[index] = int(index in relevant_sentences)
+
+  print(is_ranked_sentence_relevant)
+  
+
+
+  print(win_count_to_indices)
+
+def calculate_mrr(results, helper, key):
+  identifiers = []
+  preds = []
+  by_review_id = collections.defaultdict(lambda : collections.defaultdict(dict))
+  for batch in results:
+    i_list, p_list = batch
+    identifiers += i_list
+    preds += p_list
+  for i, p  in zip(identifiers,  preds):
+    _, review_id, reb_i, rev_j, rev_k  = i.split("_")
+    by_review_id[review_id][reb_i][(rev_j, rev_k)] = p
+
+  for review_id, review_preds in by_review_id.items():
+    print(helper['disapere_' + review_id])
+    for rebuttal_index, this_reb_preds in review_preds.items():
+      wins = collections.Counter()
+      for (rev_j, rev_k), v in this_reb_preds.items():
+        if v:
+          wins[rev_k] += 1
+        else:
+          wins[rev_j] += 1
+      print(rebuttal_index, wins.most_common(1)[0])
+      relevant_indices, pred_scores = helper["disapere_"+review_id][key][rebuttal_index]
+      print(convert_wins_to_map(wins, pred_scores, len(pred_scores),
+      relevant_indices))
+
+  assert len(identifiers) == len(preds) 
   return None
 
 def train_or_eval(
@@ -87,7 +136,8 @@ def train_or_eval(
 
       outputs = model(input_ids=input_ids, attention_mask=attention_mask)
       _, preds = torch.max(outputs, dim=1)
-      results.append((preds, targets))
+      if return_preds:
+        results.append((d['identifier'], preds.cpu().numpy().tolist()))
       loss = loss_fn(outputs, targets)
       correct_predictions += torch.sum(preds == target_indices)
       losses.append(loss.item())
@@ -103,7 +153,9 @@ def train_or_eval(
   else:
     return correct_predictions.double().item() / n_examples, np.mean(losses)
 
-
+def get_metric_helper(data_dir, subset_key):
+  with open(f'{data_dir}/examples_{subset_key}_helper.json', 'r') as f:
+    return json.load(f)
 
 def main():
 
@@ -117,6 +169,7 @@ def main():
       val_data_loader,
       full_val_data_loader,
   ) = ws_lib.build_data_loaders(args.data_dir, key, tokenizer)
+  val_metric_helper = get_metric_helper(args.data_dir, "dev_mini")
 
   model = ws_lib.SentimentClassifier(2).to(DEVICE)
   optimizer = AdamW(model.parameters(), lr=2e-5)
@@ -135,6 +188,7 @@ def main():
 
     if best_accuracy_epoch is not None and epoch - best_accuracy_epoch > PATIENCE:
       break
+    mrr_accumulator = []
 
     print(f"Epoch {epoch + 1}/{EPOCHS}")
     print("-" * 10)
@@ -145,8 +199,8 @@ def main():
     val_acc, val_loss = train_or_eval("eval", model, val_data_loader, loss_fn,
         DEVICE)
 
-    val_mrr = calculate_mrr(train_or_eval("eval", model, val_data_loader, loss_fn,
-        DEVICE, return_preds=True))
+    val_mrr = calculate_mrr(train_or_eval("eval", model, full_val_data_loader, loss_fn,
+        DEVICE, return_preds=True), val_metric_helper, key)
     history.append(HistoryItem(epoch, train_acc, train_loss, val_acc, val_loss,
     val_mrr))
     print(history[-1]._asdict())

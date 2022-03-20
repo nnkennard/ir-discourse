@@ -5,7 +5,6 @@ import tqdm
 import numpy as np
 
 
-
 class Preprocessors(object):
   STANZA = "stanza"
   BERT_STOP = "bert_stop"
@@ -36,6 +35,7 @@ def dump_raw_text_to_file(examples, data_dir, subset):
   with open(f"{data_dir}/{subset}_raw.json", "w") as f:
     json.dump([x._asdict() for x in examples], f)
 
+
 def load_examples(data_dir, dataset_name, subset):
   with open(f"{data_dir}/{subset}_raw.json", "r") as f:
     return {example["identifier"]: example for example in json.load(f)}
@@ -45,6 +45,7 @@ class Corpus(object):
   REVIEW = "review"
   FULL = "full"
   ALL = [REVIEW, FULL]
+
 
 class Texts(object):
 
@@ -77,5 +78,3 @@ class Texts(object):
             continue
           self.corpora[preprocessor] += tokenized
         offset += review_len
-
-
