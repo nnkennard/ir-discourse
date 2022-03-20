@@ -18,9 +18,9 @@ parser.add_argument(
 )
 
 
-def build_text(rebuttal_sentence, review_sentence_1, review_sentence_2):
-  return "[CLS] " + " [SEP] ".join(
-      [rebuttal_sentence, review_sentence_1, review_sentence_2])
+#def build_text(rebuttal_sentence, review_sentence_1, review_sentence_2):
+#  return "[CLS] " + " [SEP] ".join(
+#      [rebuttal_sentence, review_sentence_1, review_sentence_2])
 
 
 def sample_indices(num_review_sentences, num_rebuttal_sentences, dont_sample):
@@ -39,11 +39,24 @@ def sample_indices(num_review_sentences, num_rebuttal_sentences, dont_sample):
     return random.sample(pool, num_samples)
 
 
-def get_example_texts(review_sentences, rebuttal_sentences, sampled_indices):
+#def get_example_texts(review_sentences, rebuttal_sentences, sampled_indices):
+#  return [
+#      build_text(rebuttal_sentences[reb_i], review_sentences[rev_j],
+#                 review_sentences[rev_k])
+#      for reb_i, rev_j, rev_k in sampled_indices
+#  ]
+
+def new_build_text(reb_i, rev_j, rev_k, review_id, review_sentences,
+    rebuttal_sentences):
+      return f"{review_id}_{reb_i}_{rev_j}_{rev_k}\t[CLS] " + " [SEP] ".join(
+      [rebuttal_sentences[reb_i], review_sentences[rev_j],
+      review_sentences[rev_k]])
+
+def new_get_example_texts(review_sentences, rebuttal_sentences,
+sampled_indices, review_id):
   return [
-      build_text(rebuttal_sentences[reb_i], review_sentences[rev_j],
-                 review_sentences[rev_k])
-      for reb_i, rev_j, rev_k in sampled_indices
+    new_build_text(reb_i, rev_j, rev_k, review_id, review_sentences,
+    rebuttal_sentences) for reb_i, rev_j, rev_k  in sampled_indices
   ]
 
 def sample_and_label(subset_scores, raw_text_map, dont_sample=False,
@@ -62,9 +75,9 @@ def sample_and_label(subset_scores, raw_text_map, dont_sample=False,
                                      len(rebuttal_sentences),
                                      dont_sample=dont_sample or mini_sample)
 
-    review_example_texts = get_example_texts(review_sentences,
+    review_example_texts = new_get_example_texts(review_sentences,
                                              rebuttal_sentences,
-                                             sampled_indices)
+                                             sampled_indices, review_id)
     example_texts += review_example_texts
     sources += [(review_id, i, j, k) for i, j, k in sampled_indices]
 

@@ -1,231 +1,165 @@
+import argparse
 import collections
-import transformers
-from transformers import BertTokenizer, BertModel
-
-import pandas as pd
-from torch.optim import AdamW
-from torch.utils.data import Dataset, DataLoader
-import torch.nn as nn
-import torch
 import numpy as np
+import pandas as pd
+import pickle
+import torch
+import torch.nn as nn
 import tqdm
+import transformers
 
-PRE_TRAINED_MODEL_NAME = "bert-base-uncased"
+from contextlib import nullcontext
+from torch.optim import AdamW
+from transformers import BertTokenizer
 
-device = "cuda"
+import ws_lib
 
+parser = argparse.ArgumentParser(description="Create examples for WS training")
+parser.add_argument(
+    "-d",
+    "--data_dir",
+    type=str,
+    help="path to data file containing score jsons",
+)
 
-class WeakSupervisionDataset(Dataset):
+parser.add_argument(
+    "-t",
+    "--tokenization",
+    type=str,
+    help="type of tokenization",
+)
+parser.add_argument(
+    "-n",
+    "--dataset_name",
+    type=str,
+    help="e.g. disapere or ape",
+)
+parser.add_argument(
+    "-c",
+    "--corpus_type",
+    type=str,
+    help="type of corpus for calculating scores (full dataset or review)",
+)
 
-  def __init__(self, texts, targets, tokenizer, max_len=512):
-    self.texts = texts
-    self.target_indices = targets
-    self.targets = [np.eye(2, dtype=np.float64)[int(i)] for i in targets]
-    self.tokenizer = tokenizer
-    self.max_len = max_len
+DEVICE = "cuda"
+EPOCHS = 100
+PATIENCE = 20
+TRAIN, EVAL = "train eval".split()
 
-  def __len__(self):
-    return len(self.texts)
+HistoryItem = collections.namedtuple("HistoryItem",
+  "epoch train_acc train_loss val_acc val_loss val_mrr".split())
 
-  def __getitem__(self, item):
-    text = str(self.texts[item])
-    target = self.targets[item]
-
-    encoding = self.tokenizer.encode_plus(
-        text,
-        add_special_tokens=True,
-        return_token_type_ids=False,
-        padding="max_length",
-        max_length=512,
-        truncation=True,
-        return_attention_mask=True,
-        return_tensors="pt",
-    )
-
-    return {
-        "reviews_text": text,
-        "input_ids": encoding["input_ids"].flatten(),
-        "attention_mask": encoding["attention_mask"].flatten(),
-        "targets": torch.tensor(target, dtype=torch.float64),
-        "target_indices": self.target_indices[item],
-    }
-
-
-class SentimentClassifier(nn.Module):
-
-  def __init__(self, n_classes):
-    super(SentimentClassifier, self).__init__()
-    self.bert = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME)
-    self.drop = nn.Dropout(p=0.3)
-    self.out = nn.Linear(self.bert.config.hidden_size, n_classes)
-
-  def forward(self, input_ids, attention_mask):
-    bert_output = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-    output = self.drop(bert_output["pooler_output"])
-    # print(self.out(output))
-    return self.out(output)
-
-
-def train_epoch(model, data_loader, loss_fn, optimizer, device, scheduler):
-  model = model.train()
-
-  n_examples = len(data_loader.dataset)
-  losses = []
-  correct_predictions = 0
-
-  for d in tqdm.tqdm(data_loader):
-    input_ids = d["input_ids"].to(device)
-    attention_mask = d["attention_mask"].to(device)
-    targets = d["targets"].to(device)
-
-    outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-
-    _, preds = torch.max(outputs, dim=1)
-    loss = loss_fn(
-        outputs,
-        targets,
-    )
-
-    correct_predictions += torch.sum(preds == d["target_indices"].to(device))
-    losses.append(loss.item())
-
-    loss.backward()
-    nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-    optimizer.step()
-    scheduler.step()
-    optimizer.zero_grad()
-
-  return correct_predictions.double() / n_examples, np.mean(losses)
-
-
-def calculate_mrr(model, data_loader, loss_fn, device):
-  model = model.eval()
-
-  print("Calculating dev MRR")
-  with torch.no_grad():
-    for d in tqdm.tqdm(data_loader):
-      input_ids = d["input_ids"].to(device)
-      attention_mask = d["attention_mask"].to(device)
-      targets = d["targets"].to(device)
-
-      outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-      _, preds = torch.max(outputs, dim=1)
-
-      loss = loss_fn(outputs, targets)
-
+def calculate_mrr(results):
+  print(results)
   return None
 
+def train_or_eval(
+                  mode,
+                  model,
+                  data_loader,
+                  loss_fn,
+                  device,
+                  return_preds=False,
+                  optimizer=None,
+                  scheduler=None):
+  assert mode in [TRAIN, EVAL]
+  is_train = mode == TRAIN
+  if is_train:
+    model = model.train()
+    context = nullcontext()
+    assert optimizer is not None
+    assert scheduler is not None
+  else:
+    model = model.eval()
+    context = torch.no_grad()
 
-
-def eval_model(model, data_loader, loss_fn, device):
-  model = model.eval()
-
-  n_examples = len(data_loader.dataset)
-
+  results = []
   losses = []
   correct_predictions = 0
+  n_examples = len(data_loader.dataset)
 
-  with torch.no_grad():
-    for d in data_loader:
-      input_ids = d["input_ids"].to(device)
-      attention_mask = d["attention_mask"].to(device)
-      targets = d["targets"].to(device)
+  with context:
+    for d in tqdm.tqdm(data_loader):
+      input_ids, attention_mask, targets, target_indices = [
+          d[k].to(device)
+          for k in "input_ids attention_mask targets target_indices".split()
+      ]
 
       outputs = model(input_ids=input_ids, attention_mask=attention_mask)
       _, preds = torch.max(outputs, dim=1)
-
+      results.append((preds, targets))
       loss = loss_fn(outputs, targets)
-
-      correct_predictions += torch.sum(preds == d["target_indices"].to(device))
+      correct_predictions += torch.sum(preds == target_indices)
       losses.append(loss.item())
+      if is_train:
+        loss.backward()
+        nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        optimizer.step()
+        scheduler.step()
+        optimizer.zero_grad()
 
-  return correct_predictions.double() / n_examples, np.mean(losses)
+  if return_preds:
+    return results
+  else:
+    return correct_predictions.double().item() / n_examples, np.mean(losses)
 
-
-def create_data_loader(data_dir, subset, key, tokenizer, batch_size):
-
-  with open(f"{data_dir}/examples_{subset}_text.txt", "r") as f:
-    texts = [l.strip() for l in f.readlines()]
-
-  with open(f"{data_dir}/examples_{subset}_{key}.txt", "r") as f:
-    labels = [int(l.strip()) for l in f.readlines()]
-
-  ds = WeakSupervisionDataset(
-      texts,
-      labels,
-      tokenizer=tokenizer,
-  )
-
-  return DataLoader(ds, batch_size=batch_size, num_workers=4)
-
-
-BATCH_SIZE = 64
-
-
-def build_data_loaders(key, tokenizer):
-  return (
-      create_data_loader(
-      "../data/processed_data/disapere/weaksup/",
-      "train", key, tokenizer, BATCH_SIZE),
-      create_data_loader(
-      "../data/processed_data/disapere/weaksup/",
-      "dev", key, tokenizer, BATCH_SIZE),
-  )
 
 
 def main():
 
-  key = "bert_stop|full"
+  args = parser.parse_args()
 
-  tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME)
-  train_data_loader, val_data_loader = build_data_loaders(key, tokenizer)
-  full_val_data_loader = create_data_loader(
-      "../data/processed_data/disapere/weaksup/",
-      "dev_all", key, tokenizer, BATCH_SIZE)
+  key = args.tokenization + "|" + args.corpus_type
 
-  model = SentimentClassifier(2)
-  model = model.to("cuda")
+  tokenizer = BertTokenizer.from_pretrained(ws_lib.PRE_TRAINED_MODEL_NAME)
+  (
+      train_data_loader,
+      val_data_loader,
+      full_val_data_loader,
+  ) = ws_lib.build_data_loaders(args.data_dir, key, tokenizer)
 
-  EPOCHS = 10
-
+  model = ws_lib.SentimentClassifier(2).to(DEVICE)
   optimizer = AdamW(model.parameters(), lr=2e-5)
   total_steps = len(train_data_loader) * EPOCHS
 
   scheduler = transformers.get_linear_schedule_with_warmup(
       optimizer, num_warmup_steps=0, num_training_steps=total_steps)
 
-  loss_fn = nn.BCEWithLogitsLoss().to("cuda")
+  loss_fn = nn.BCEWithLogitsLoss().to(DEVICE)
 
-  history = collections.defaultdict(list)
+  history = []
   best_accuracy = 0
+  best_accuracy_epoch = None
 
   for epoch in range(EPOCHS):
+
+    if best_accuracy_epoch is not None and epoch - best_accuracy_epoch > PATIENCE:
+      break
 
     print(f"Epoch {epoch + 1}/{EPOCHS}")
     print("-" * 10)
 
-    train_acc, train_loss = train_epoch(model, train_data_loader, loss_fn,
-                                        optimizer, device, scheduler)
+    train_acc, train_loss = train_or_eval("train", model, train_data_loader, loss_fn,
+        DEVICE, optimizer=optimizer, scheduler=scheduler)
 
-    train_acc, train_loss = eval_model(model, train_data_loader, loss_fn,
-                                       device)
-    print(f"Train loss {train_loss} accuracy {train_acc}")
+    val_acc, val_loss = train_or_eval("eval", model, val_data_loader, loss_fn,
+        DEVICE)
 
-    val_acc, val_loss = eval_model(model, val_data_loader, loss_fn, device)
-
-    val_mrr = calculate_mrr(model, full_val_data_loader, loss_fn, device)
-
-    print(f"Val   loss {val_loss} accuracy {val_acc}")
-    print()
-
-    history["train_acc"].append(train_acc)
-    history["train_loss"].append(train_loss)
-    history["val_acc"].append(val_acc)
-    history["val_loss"].append(val_loss)
+    val_mrr = calculate_mrr(train_or_eval("eval", model, val_data_loader, loss_fn,
+        DEVICE, return_preds=True))
+    history.append(HistoryItem(epoch, train_acc, train_loss, val_acc, val_loss,
+    val_mrr))
+    print(history[-1]._asdict())
 
     if val_acc > best_accuracy:
-      torch.save(model.state_dict(), f"outputs/best_model_{key}.bin")
+      torch.save(model.state_dict(), f"outputs/best_model_{args.dataset_name}_{key}.bin")
       best_accuracy = val_acc
+      best_accuracy_epoch = epoch
+
+  with open(f"outputs/history_{args.dataset_name}_{key}.pkl", 'wb') as f:
+    pickle.dump(history, f)
+
+
 
 
 if __name__ == "__main__":
