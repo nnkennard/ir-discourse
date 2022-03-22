@@ -7,11 +7,16 @@ from transformers import BertModel
 BATCH_SIZE = 64
 PRE_TRAINED_MODEL_NAME = "bert-base-uncased"
 
+HistoryItem = collections.namedtuple(
+    "HistoryItem",
+    "epoch train_acc train_loss val_acc val_loss val_mrr".split())
+
+
 
 class WeakSupervisionDataset(Dataset):
 
   def __init__(self, texts, targets, tokenizer, max_len=512):
-    self.identifiers, self.texts = zip(*[x.split("\t",1 ) for x in texts])
+    self.identifiers, self.texts = zip(*[x.split("\t", 1) for x in texts])
     self.target_indices = targets
     self.targets = [np.eye(2, dtype=np.float64)[int(i)] for i in targets]
     self.tokenizer = tokenizer
@@ -23,7 +28,6 @@ class WeakSupervisionDataset(Dataset):
   def __getitem__(self, item):
     text = str(self.texts[item])
     target = self.targets[item]
-
 
     encoding = self.tokenizer.encode_plus(
         text,
@@ -69,8 +73,8 @@ def create_data_loader(data_dir, subset, key, tokenizer, batch_size):
     labels = [int(l.strip()) for l in f.readlines()]
 
   ds = WeakSupervisionDataset(
-      texts,
-      labels,
+      texts[:100],
+      labels[:100],
       tokenizer=tokenizer,
   )
 
