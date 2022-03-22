@@ -11,7 +11,7 @@ PRE_TRAINED_MODEL_NAME = "bert-base-uncased"
 class WeakSupervisionDataset(Dataset):
 
   def __init__(self, texts, targets, tokenizer, max_len=512):
-    self.identifiers, self.texts = zip(*[x.split("\t") for x in texts])
+    self.identifiers, self.texts = zip(*[x.split("\t",1 ) for x in texts])
     self.target_indices = targets
     self.targets = [np.eye(2, dtype=np.float64)[int(i)] for i in targets]
     self.tokenizer = tokenizer
@@ -23,6 +23,7 @@ class WeakSupervisionDataset(Dataset):
   def __getitem__(self, item):
     text = str(self.texts[item])
     target = self.targets[item]
+
 
     encoding = self.tokenizer.encode_plus(
         text,
@@ -56,7 +57,6 @@ class SentimentClassifier(nn.Module):
   def forward(self, input_ids, attention_mask):
     bert_output = self.bert(input_ids=input_ids, attention_mask=attention_mask)
     output = self.drop(bert_output["pooler_output"])
-    # print(self.out(output))
     return self.out(output)
 
 
@@ -69,12 +69,12 @@ def create_data_loader(data_dir, subset, key, tokenizer, batch_size):
     labels = [int(l.strip()) for l in f.readlines()]
 
   ds = WeakSupervisionDataset(
-      texts[:30000],
-      labels[:30000],
+      texts,
+      labels,
       tokenizer=tokenizer,
   )
 
-  return DataLoader(ds, batch_size=batch_size, num_workers=4)
+  return DataLoader(ds, batch_size=batch_size, num_workers=8)
 
 
 def build_data_loaders(data_dir, key, tokenizer):
