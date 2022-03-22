@@ -23,7 +23,12 @@ parser.add_argument(
     type=str,
     help="path to data file containing score jsons",
 )
-
+parser.add_argument(
+    "-m",
+    "--mode",
+    type=str,
+    help="train or eval",
+)
 parser.add_argument(
     "-t",
     "--tokenization",
@@ -168,13 +173,10 @@ def print_dict(dict_to_print):
   for k, v in dict_to_print.items():
     print(f"{k}\t{v}")
 
-def main():
 
-  args = parser.parse_args()
-
+def do_train(tokenizer, model, loss_fn, data_dir, dataset_name, key):
   hyperparams = {
-      "tokenization": args.tokenization,
-      "corpus": args.corpus_type,
+      "key": key,
       "epochs": EPOCHS,
       "patience": PATIENCE,
       "learning_rate": LEARNING_RATE,
@@ -183,25 +185,19 @@ def main():
   }
 
   print_dict(hyperparams)
-
-  key = args.tokenization + "|" + args.corpus_type
-
-  tokenizer = BertTokenizer.from_pretrained(ws_lib.PRE_TRAINED_MODEL_NAME)
   (
       train_data_loader,
       val_data_loader,
       full_val_data_loader,
-  ) = ws_lib.build_data_loaders(args.data_dir, key, tokenizer)
-  val_metric_helper = get_metric_helper(args.data_dir, "dev_mini")
+  ) = ws_lib.build_data_loaders(data_dir, key, tokenizer)
+  val_metric_helper = get_metric_helper(data_dir, "dev_mini")
 
-  model = ws_lib.SentimentClassifier(2).to(DEVICE)
   optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
   total_steps = len(train_data_loader) * EPOCHS
 
   scheduler = transformers.get_linear_schedule_with_warmup(
       optimizer, num_warmup_steps=0, num_training_steps=total_steps)
 
-  loss_fn = nn.BCEWithLogitsLoss().to(DEVICE)
 
   history = []
   best_accuracy = 0
@@ -238,13 +234,62 @@ def main():
     if val_acc > best_accuracy:
       torch.save(
           model.state_dict(),
-          f"outputs/best_model_{args.dataset_name}_{key}.bin",
+          f"outputs/best_model_{dataset_name}_{key}.bin",
       )
       best_accuracy = val_acc
       best_accuracy_epoch = epoch
 
-  with open(f"outputs/history_{args.dataset_name}_{key}.pkl", "wb") as f:
+  with open(f"outputs/history_{dataset_name}_{key}.pkl", "wb") as f:
     pickle.dump((hyperparams, history), f)
+
+
+
+def do_eval(tokenizer, model, loss_fn, data_dir, dataset_name, key):
+  full_test_data_loader = ws_lib.create_data_loader(
+          data_dir,
+          "test_all",
+          key,
+          tokenizer,
+          ws_lib.BATCH_SIZE,
+      )
+
+  test_metric_helper = get_metric_helper(data_dir, "test_all")
+
+
+  model.load_state_dict(torch.load(
+  f"outputs/best_model_{dataset_name}_{key}.bin"
+  ))
+
+  results = train_or_eval("eval", model, full_test_data_loader, loss_fn,
+       DEVICE, return_preds=True)
+  test_mrr = calculate_mrr(results, test_metric_helper, key)
+
+  identifiers = []
+  labels = []
+  for i, l in results:
+    identifiers += i
+    labels +=  l
+
+  with open(f'outputs/test_results_{dataset_name}_{key}.pkl', 'wb') as f:
+    pickle.dump(list(zip(identifiers, labels)), f)
+
+def main():
+
+  args = parser.parse_args()
+
+  assert args.mode in [TRAIN, EVAL]
+
+  tokenizer = BertTokenizer.from_pretrained(ws_lib.PRE_TRAINED_MODEL_NAME)
+  model = ws_lib.SentimentClassifier(2).to(DEVICE)
+  loss_fn = nn.BCEWithLogitsLoss().to(DEVICE)
+
+  key = args.tokenization + "|" + args.corpus_type
+
+  if args.mode == TRAIN:
+    do_train(tokenizer, model, loss_fn, args.data_dir, args.dataset_name, key)
+  else:
+    assert args.mode == EVAL
+    do_eval(tokenizer, model, loss_fn, args.data_dir, args.dataset_name, key)
 
 
 if __name__ == "__main__":
