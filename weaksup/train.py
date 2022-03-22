@@ -12,6 +12,7 @@ import transformers
 from contextlib import nullcontext
 from torch.optim import AdamW
 from transformers import BertTokenizer
+from rank_metrics import average_precision
 
 import ws_lib
 
@@ -50,8 +51,14 @@ TRAIN, EVAL = "train eval".split()
 HistoryItem = collections.namedtuple("HistoryItem",
   "epoch train_acc train_loss val_acc val_loss val_mrr".split())
 
-def convert_wins_to_map(wins, scores, num_review_sentences, relevant_sentences):
+def get_ap_from_wins(wins, helper):
+  scores =  helper['bm25_scores']
+  relevant_indices = helper['actual_aligned_indices']
+  if not relevant_indices:
+    return None
   win_count_to_indices = collections.OrderedDict()
+  num_review_sentences = len(scores)
+
   missing_indices = set(range(num_review_sentences))
   for review_index, num_wins in wins.most_common():
     missing_indices.remove(int(review_index))
@@ -61,17 +68,17 @@ def convert_wins_to_map(wins, scores, num_review_sentences, relevant_sentences):
       win_count_to_indices[num_wins] = [int(review_index)]
   win_count_to_indices[0] = list(sorted(missing_indices))
 
+
   is_ranked_sentence_relevant = [None] * num_review_sentences
   for win_count, indices in win_count_to_indices.items():
     ordered_indices = list(reversed(sorted([x, scores[x]] for x in indices)))
-    for _, index in ordered_indices:
-      is_ranked_sentence_relevant[index] = int(index in relevant_sentences)
+    for index, _ in ordered_indices:
+      is_ranked_sentence_relevant[index] = int(index in relevant_indices)
 
-  print(is_ranked_sentence_relevant)
+  return average_precision(is_ranked_sentence_relevant)
   
 
 
-  print(win_count_to_indices)
 
 def calculate_mrr(results, helper, key):
   identifiers = []
@@ -82,11 +89,11 @@ def calculate_mrr(results, helper, key):
     identifiers += i_list
     preds += p_list
   for i, p  in zip(identifiers,  preds):
-    _, review_id, reb_i, rev_j, rev_k  = i.split("_")
+    review_id, reb_i, rev_j, rev_k  = i.split("|")
     by_review_id[review_id][reb_i][(rev_j, rev_k)] = p
 
+  aps = []
   for review_id, review_preds in by_review_id.items():
-    print(helper['disapere_' + review_id])
     for rebuttal_index, this_reb_preds in review_preds.items():
       wins = collections.Counter()
       for (rev_j, rev_k), v in this_reb_preds.items():
@@ -94,13 +101,12 @@ def calculate_mrr(results, helper, key):
           wins[rev_k] += 1
         else:
           wins[rev_j] += 1
-      print(rebuttal_index, wins.most_common(1)[0])
-      relevant_indices, pred_scores = helper["disapere_"+review_id][key][rebuttal_index]
-      print(convert_wins_to_map(wins, pred_scores, len(pred_scores),
-      relevant_indices))
+      maybe_ap = get_ap_from_wins(wins, helper[review_id][key][rebuttal_index])
+      if maybe_ap is not None:
+        aps.append(maybe_ap)
 
   assert len(identifiers) == len(preds) 
-  return None
+  return np.mean(aps)
 
 def train_or_eval(
                   mode,
@@ -199,14 +205,17 @@ def main():
     val_acc, val_loss = train_or_eval("eval", model, val_data_loader, loss_fn,
         DEVICE)
 
-    val_mrr = calculate_mrr(train_or_eval("eval", model, full_val_data_loader, loss_fn,
-        DEVICE, return_preds=True), val_metric_helper, key)
+    #val_mrr = calculate_mrr(train_or_eval("eval", model, full_val_data_loader, loss_fn,
+    #    DEVICE, return_preds=True), val_metric_helper, key)
+    val_mrr = None
     history.append(HistoryItem(epoch, train_acc, train_loss, val_acc, val_loss,
     val_mrr))
-    print(history[-1]._asdict())
+    for k, v in history[-1]._asdict().items():
+      print(k+"\t",v)
+    print()
 
     if val_acc > best_accuracy:
-      torch.save(model.state_dict(), f"outputs/best_model_{args.dataset_name}_{key}.bin")
+      torch.save(model.state_dict(), f"outputs/best_model_dsds_{args.dataset_name}_{key}.bin")
       best_accuracy = val_acc
       best_accuracy_epoch = epoch
 

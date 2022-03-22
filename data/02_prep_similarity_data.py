@@ -1,36 +1,43 @@
-from ird_lib import Texts, TextInfo
-import collections
+import argparse
+import ird_lib
 import pickle
 
-no_match_tokens = ["no", "_", "match"]
-NO_MATCH = "NO_MATCH"
+parser = argparse.ArgumentParser(
+    description="Create examples for similarity training")
+parser.add_argument(
+    "-d",
+    "--data_dir",
+    type=str,
+    help="path to data file containing score jsons",
+)
 
-Example = collections.namedtuple(
-    "Example", "rebuttal_sentence review_sentence label".split())
+NO_MATCH = "NO_MATCH"
 
 
 def main():
-  with open("data/bm25_scores.pkl", "rb") as f:
-    texts = pickle.load(f)
+  args = parser.parse_args()
 
-  example_map = {}
-  for subset, subset_texts in texts.texts.items():
+  with open(f"{args.data_dir}/scores.pkl", "rb") as f:
+    scores = pickle.load(f)
+
+  for subset, subset_scores in scores.items():
+    raw_text_map = ird_lib.load_examples(args.data_dir, None, subset)
     examples = []
-    for review_id, info in subset_texts.items():
-      for reb_i, reb_sentence in enumerate(info.rebuttal_sentences["raw"]):
-        for rev_i, rev_sentence in enumerate(info.review_sentences["raw"]):
+    for review_id, info in subset_scores.items():
+      review_sentences = raw_text_map[review_id]["review_lines"]
+      rebuttal_sentences = raw_text_map[review_id]["rebuttal_lines"]
+      alignment_map = info["discrete"]
+      for reb_i, reb_sentence in enumerate(rebuttal_sentences):
+        for rev_i, rev_sentence in enumerate(review_sentences):
           examples.append(
-              Example(reb_sentence, rev_sentence,
-                      info.alignment_map[reb_i][rev_i]))
-        if sum(info.alignment_map[reb_i]):
+              f"{reb_sentence}\t{rev_sentence}\t{alignment_map[reb_i][rev_i]}")
+        if sum(alignment_map[reb_i]):
           no_match_score = 1.0
         else:
           no_match_score = 0.0
-        examples.append(Example(reb_sentence, NO_MATCH, no_match_score))
-    example_map[subset] = [x._asdict() for x in examples]
-
-  with open("data/similarity_scores.pkl", "wb") as f:
-    pickle.dump(example_map, f)
+        examples.append(f"{reb_sentence}\t{NO_MATCH}\t{no_match_score}")
+    with open(f"{args.data_dir}/similarity/{subset}.txt", "w") as f:
+      f.write("\n".join(examples))
 
 
 if __name__ == "__main__":

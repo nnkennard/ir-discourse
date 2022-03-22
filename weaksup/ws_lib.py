@@ -69,8 +69,8 @@ def create_data_loader(data_dir, subset, key, tokenizer, batch_size):
     labels = [int(l.strip()) for l in f.readlines()]
 
   ds = WeakSupervisionDataset(
-      texts[:1000],
-      labels[:1000],
+      texts[:30000],
+      labels[:30000],
       tokenizer=tokenizer,
   )
 
