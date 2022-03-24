@@ -50,7 +50,7 @@ parser.add_argument(
 
 DEVICE = "cuda"
 EPOCHS = 100
-PATIENCE = 20
+PATIENCE = 5
 LEARNING_RATE = 2e-5
 TRAIN, EVAL = "train eval".split()
 
@@ -73,10 +73,12 @@ def get_ap_from_wins(wins, helper):
   win_count_to_indices[0] = list(sorted(missing_indices))
 
   is_ranked_sentence_relevant = [None] * num_review_sentences
+  rank_counter = 0
   for win_count, indices in win_count_to_indices.items():
     ordered_indices = list(reversed(sorted([x, scores[x]] for x in indices)))
     for index, _ in ordered_indices:
-      is_ranked_sentence_relevant[index] = int(index in relevant_indices)
+      is_ranked_sentence_relevant[rank_counter] = int(index in relevant_indices)
+      rank_counter += 1
 
   return average_precision(is_ranked_sentence_relevant)
 
@@ -99,14 +101,13 @@ def calculate_mrr(results, helper, key):
       wins = collections.Counter()
       for (rev_j, rev_k), v in this_reb_preds.items():
         if v:
-          wins[rev_k] += 1
-        else:
           wins[rev_j] += 1
+        else:
+          wins[rev_k] += 1
       maybe_ap = get_ap_from_wins(wins, helper[review_id][key][rebuttal_index])
       if maybe_ap is not None:
         aps.append(maybe_ap)
 
-  print(aps)
   assert len(identifiers) == len(preds)
   return np.mean(aps)
 
@@ -146,6 +147,7 @@ def train_or_eval(
 
       outputs = model(input_ids=input_ids, attention_mask=attention_mask)
       _, preds = torch.max(outputs, dim=1)
+      print(collections.Counter(p.item() for p in preds))
       if return_preds:
         results.append((d["identifier"], preds.cpu().numpy().tolist()))
       loss = loss_fn(outputs, targets)
@@ -198,7 +200,6 @@ def do_train(tokenizer, model, loss_fn, data_dir, dataset_name, key):
   scheduler = transformers.get_linear_schedule_with_warmup(
       optimizer, num_warmup_steps=0, num_training_steps=total_steps)
 
-
   history = []
   best_accuracy = 0
   best_accuracy_epoch = None
@@ -225,10 +226,19 @@ def do_train(tokenizer, model, loss_fn, data_dir, dataset_name, key):
     val_acc, val_loss = train_or_eval("eval", model, val_data_loader, loss_fn,
                                       DEVICE)
 
-    val_mrr = calculate_mrr(train_or_eval("eval", model, full_val_data_loader, loss_fn,
-       DEVICE, return_preds=True), val_metric_helper, key)
+    val_mrr = calculate_mrr(
+        train_or_eval("eval",
+                      model,
+                      full_val_data_loader,
+                      loss_fn,
+                      DEVICE,
+                      return_preds=True),
+        val_metric_helper,
+        key,
+    )
     history.append(
-        ws_lib.HistoryItem(epoch, train_acc, train_loss, val_acc, val_loss, val_mrr))
+        ws_lib.HistoryItem(epoch, train_acc, train_loss, val_acc, val_loss,
+                           val_mrr))
     print_dict(history[-1]._asdict())
 
     if val_acc > best_accuracy:
@@ -243,35 +253,46 @@ def do_train(tokenizer, model, loss_fn, data_dir, dataset_name, key):
     pickle.dump((hyperparams, history), f)
 
 
-
 def do_eval(tokenizer, model, loss_fn, data_dir, dataset_name, key):
   full_test_data_loader = ws_lib.create_data_loader(
-          data_dir,
-          "test_all",
-          key,
-          tokenizer,
-          ws_lib.BATCH_SIZE,
-      )
+      data_dir,
+      "test_all",
+      key,
+      tokenizer,
+      ws_lib.BATCH_SIZE,
+  )
 
   test_metric_helper = get_metric_helper(data_dir, "test_all")
 
+  print(f"outputs/best_model_{dataset_name}_{key}.bin")
 
-  model.load_state_dict(torch.load(
-  f"outputs/best_model_{dataset_name}_{key}.bin"
-  ))
+  model.load_state_dict(
+      torch.load(f"outputs/best_model_{dataset_name}_{key}.bin"))
 
-  results = train_or_eval("eval", model, full_test_data_loader, loss_fn,
-       DEVICE, return_preds=True)
-  test_mrr = calculate_mrr(results, test_metric_helper, key)
+  results = train_or_eval("eval",
+                          model,
+                          full_test_data_loader,
+                          loss_fn,
+                          DEVICE,
+                          return_preds=True)
 
   identifiers = []
   labels = []
   for i, l in results:
     identifiers += i
-    labels +=  l
+    labels += l
 
-  with open(f'outputs/test_results_{dataset_name}_{key}.pkl', 'wb') as f:
-    pickle.dump(list(zip(identifiers, labels)), f)
+  with open(f"outputs/test_results_{dataset_name}_{key}.pkl", "wb") as f:
+    pickle.dump({"results": list(zip(identifiers, labels))}, f)
+
+  test_mrr = calculate_mrr(results, test_metric_helper, key)
+  with open(f"outputs/test_results_{dataset_name}_{key}.pkl", "wb") as f:
+    pickle.dump(
+        {
+            "test_map": test_mrr,
+            "results": list(zip(identifiers, labels))
+        }, f)
+
 
 def main():
 

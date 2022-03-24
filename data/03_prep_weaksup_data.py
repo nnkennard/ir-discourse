@@ -61,6 +61,19 @@ def build_metric_helper(discrete_score_matrix, predicted_score_matrix):
     }
   return metric_helper
 
+def get_mini_sample(review_ids, subset_scores):
+  mini_sample = []
+  print(len(review_ids))
+  for review_id in review_ids:
+
+    print(list(tuple(np.array(x).shape) for x in subset_scores[review_id].values()))
+    if len(set(tuple(np.array(x).shape) for x in subset_scores[review_id].values())) == 1:
+      mini_sample.append(review_id)
+    else:
+      print(f"problem: {review_id}")
+    if len(mini_sample) == 20:
+      return mini_sample
+  print("Uh oh", len(mini_sample))
 
 def sample_and_label(subset_scores,
                      raw_text_map,
@@ -70,8 +83,9 @@ def sample_and_label(subset_scores,
   metric_helper = collections.defaultdict(dict)
   label_map = collections.defaultdict(list)
   review_ids = subset_scores.keys()
+  index_error_count = 0
   if mini_sample:
-    review_ids = list(review_ids)[:20]
+    review_ids = get_mini_sample(review_ids, subset_scores)
   for review_id in tqdm.tqdm(review_ids):
     scores = subset_scores[review_id]
     review_sentences = raw_text_map[review_id]["review_lines"]
@@ -95,12 +109,17 @@ def sample_and_label(subset_scores,
       metric_helper[review_id][key] = build_metric_helper(
           scores["discrete"], score_matrix)
       for reb_i, rev_j, rev_k in sampled_indices:
-        score_j = score_matrix[reb_i][rev_j]
-        score_k = score_matrix[reb_i][rev_k]
-        label = 1 if score_j > score_k else 0
-        review_label_map[key].append(label)
+        try:
+          score_j = score_matrix[reb_i][rev_j]
+          score_k = score_matrix[reb_i][rev_k]
+          label = 1 if score_j > score_k else 0
+          review_label_map[key].append(label)
+        except IndexError:
+          index_error_count +=1
+
     for key, labels in review_label_map.items():
       label_map[key] += labels
+  print(f"Index errors: {index_error_count}")  
   return example_texts, label_map, metric_helper
 
 

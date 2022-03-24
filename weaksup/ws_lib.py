@@ -13,7 +13,6 @@ HistoryItem = collections.namedtuple(
     "epoch train_acc train_loss val_acc val_loss val_mrr".split())
 
 
-
 class WeakSupervisionDataset(Dataset):
 
   def __init__(self, texts, targets, tokenizer, max_len=512):
@@ -74,8 +73,8 @@ def create_data_loader(data_dir, subset, key, tokenizer, batch_size):
     labels = [int(l.strip()) for l in f.readlines()]
 
   ds = WeakSupervisionDataset(
-      texts[:100],
-      labels[:100],
+      texts,
+      labels,
       tokenizer=tokenizer,
   )
 

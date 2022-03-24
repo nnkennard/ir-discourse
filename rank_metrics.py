@@ -3,6 +3,10 @@ From: https://gist.github.com/bwhite/3726239#file-rank_metrics-py
 """
 import numpy as np
 
+def reciprocal_rank(rs):
+  for i, r in enumerate(rs):
+    if r:
+      return 1/(1+i)
 
 def mean_reciprocal_rank(rs):
   """Score is reciprocal of the rank of the first relevant item

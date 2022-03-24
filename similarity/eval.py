@@ -9,18 +9,9 @@ from sentence_transformers import losses, util
 from sentence_transformers import LoggingHandler, SentenceTransformer, evaluation
 from sentence_transformers.readers import InputExample
 
-#### Just some code to print debug information to stdout
-logging.basicConfig(format='%(asctime)s - %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S',
-                    level=logging.INFO,
-                    handlers=[LoggingHandler()])
-logger = logging.getLogger(__name__)
+model = SentenceTransformer('outputs/best_model') 
 
-logger.info("Loading model...")
-model = SentenceTransformer('output/training_OnlineConstrativeLoss-2022-03-12_12-30-29')  # model trained with contrastive and without NO_MATCH; this model was also trained on the preprocessed data given by Neha here /home/rajarshi/Dropbox/research/peer-review-discourse-dataset/data_prep/final_dataset/train
-# model = SentenceTransformer('output/training_OnlineConstrativeLoss-2021-10-16_03-34-57')  # model trained with ranking loss and NO_MATCH
-# model = SentenceTransformer('output/training_OnlineConstrativeLoss-2021-10-16_03-52-04')  # model trained with contrastive and NO_MATCH
-# model = SentenceTransformer('all-MiniLM-L6-v2')  # model trained with contrastive and NO_MATCH
+
 
 data_dir = "../../DISAPERE/DISAPERE/final_dataset/"
 input_files = [f_name for f_name in os.listdir(os.path.join(data_dir, "test")) if f_name.endswith('.json')]
