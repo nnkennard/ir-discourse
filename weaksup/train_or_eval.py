@@ -244,16 +244,18 @@ def do_train(tokenizer, model, loss_fn, data_dir, dataset_name, key):
     if val_acc > best_accuracy:
       torch.save(
           model.state_dict(),
-          f"outputs/best_model_{dataset_name}_{key}.bin",
+          f"outputs/mrr_trend_best_model_{dataset_name}_{key}.bin",
       )
       best_accuracy = val_acc
       best_accuracy_epoch = epoch
 
-  with open(f"outputs/history_{dataset_name}_{key}.pkl", "wb") as f:
+  with open(f"outputs/mrr_trend_history_{dataset_name}_{key}.pkl", "wb") as f:
     pickle.dump((hyperparams, history), f)
 
 
 def do_eval(tokenizer, model, loss_fn, data_dir, dataset_name, key):
+  dataset_name = "mini_ape"
+  data_dir = "../data/processed_data/mini_ape/weaksup"
   full_test_data_loader = ws_lib.create_data_loader(
       data_dir,
       "test_all",
@@ -264,8 +266,7 @@ def do_eval(tokenizer, model, loss_fn, data_dir, dataset_name, key):
 
   test_metric_helper = get_metric_helper(data_dir, "test_all")
 
-  print(f"outputs/best_model_{dataset_name}_{key}.bin")
-
+  dataset_name = "disapere"
   model.load_state_dict(
       torch.load(f"outputs/best_model_{dataset_name}_{key}.bin"))
 
@@ -281,6 +282,8 @@ def do_eval(tokenizer, model, loss_fn, data_dir, dataset_name, key):
   for i, l in results:
     identifiers += i
     labels += l
+
+  dataset_name = "mini_ape"
 
   with open(f"outputs/test_results_{dataset_name}_{key}.pkl", "wb") as f:
     pickle.dump({"results": list(zip(identifiers, labels))}, f)
